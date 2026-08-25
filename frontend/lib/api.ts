@@ -80,13 +80,23 @@ export async function getReports(type?: 'Lost' | 'Found'): Promise<Report[]> {
     url.searchParams.set('report_type', type)
   }
   
-  const response = await fetch(url.toString())
+  console.log('Fetching reports from:', url.toString())
+  
+  const response = await fetch(url.toString(), {
+    cache: 'no-store', // Prevent caching issues
+  })
+  
+  console.log('Response status:', response.status)
   
   if (!response.ok) {
+    const errorText = await response.text()
+    console.error('API error response:', errorText)
     throw new Error(`API error: ${response.status}`)
   }
   
-  return response.json()
+  const data = await response.json()
+  console.log('Fetched reports:', data)
+  return data
 }
 
 /**

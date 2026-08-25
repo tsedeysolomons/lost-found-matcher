@@ -19,7 +19,7 @@ import {
   Sparkles,
   X,
 } from 'lucide-react'
-import { createReport, getReports, Report, MatchResponse } from '@/lib/api'
+import { createReport, getReports, Report, MatchResponse, getMatches } from '@/lib/api'
 
 type ReportType = 'Lost' | 'Found'
 
@@ -39,13 +39,37 @@ export function LostFoundDashboard() {
   const [filter, setFilter] = useState<'All' | ReportType>('All')
   const [menuOpen, setMenuOpen] = useState(false)
 
-  // Fetch reports from backend on mount
+  // Fetch reports and compute matches from backend on mount
   useEffect(() => {
-    async function fetchReports() {
+    async function fetchReportsAndMatches() {
       try {
         setLoading(true)
+        console.log('Fetching reports from backend...')
         const fetchedReports = await getReports()
+        console.log('Fetched reports:', fetchedReports)
         setReports(fetchedReports)
+        
+        // Fetch matches for all reports and combine them
+        console.log('Fetching matches for all reports...')
+        const allMatches: MatchResponse[] = []
+        for (const report of fetchedReports) {
+          try {
+            const reportMatches = await getMatches(report.id, 35.0)
+            // Add matches, avoiding duplicates
+            reportMatches.forEach(match => {
+              const isDuplicate = allMatches.some(
+                m => (m.lost_report.id === match.lost_report.id && m.found_report.id === match.found_report.id)
+              )
+              if (!isDuplicate) {
+                allMatches.push(match)
+              }
+            })
+          } catch (error) {
+            console.error(`Failed to fetch matches for report ${report.id}:`, error)
+          }
+        }
+        console.log('All matches loaded:', allMatches)
+        setMatches(allMatches)
         setLoading(false)
       } catch (error) {
         console.error('Failed to fetch reports:', error)
@@ -53,7 +77,7 @@ export function LostFoundDashboard() {
       }
     }
     
-    fetchReports()
+    fetchReportsAndMatches()
   }, [])
 
   // Compute matches from reports (for dashboard display)
@@ -87,17 +111,40 @@ export function LostFoundDashboard() {
                   const result = await createReport(reportData);
                   // Add new report to list
                   setReports((current) => [result.report, ...current]);
-                  // Store matches if any
-                  if (result.matches.length > 0) {
-                    setMatches((current) => [...result.matches, ...current]);
-                    alert(`Great! Found ${result.matches.length} potential match${result.matches.length > 1 ? 'es' : ''}!`);
+                  
+                  // Refresh all matches to include the new report's matches
+                  const allReportsWithNew = [result.report, ...reports]
+                  const allMatches: MatchResponse[] = []
+                  
+                  for (const report of allReportsWithNew) {
+                    try {
+                      const reportMatches = await getMatches(report.id, 35.0)
+                      reportMatches.forEach(match => {
+                        const isDuplicate = allMatches.some(
+                          m => (m.lost_report.id === match.lost_report.id && m.found_report.id === match.found_report.id)
+                        )
+                        if (!isDuplicate) {
+                          allMatches.push(match)
+                        }
+                      })
+                    } catch (error) {
+                      console.error(`Failed to fetch matches for report ${report.id}:`, error)
+                    }
                   }
+                  setMatches(allMatches)
+                  
+                  if (result.matches.length > 0) {
+                    alert(`Great! Found ${result.matches.length} potential match${result.matches.length > 1 ? 'es' : ''}! Check the Potential Matches page.`);
+                  } else {
+                    alert('Report submitted successfully! No matches found yet.');
+                  }
+                  
                   // Show warning if any
                   if (result.warning) {
                     console.warn(result.warning);
                   }
                   resetForm();
-                  go('Reports');
+                  go('Dashboard');
                 } catch (error) {
                   console.error('Failed to create report:', error);
                   alert('Failed to create report. Please try again.');
